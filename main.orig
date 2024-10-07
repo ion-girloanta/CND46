@@ -1,0 +1,93 @@
+provider "aws" {
+  alias  = "israel"
+  region = "il-central-1" # Israel (Tel Aviv) region
+}
+
+provider "aws" {
+  alias  = "usa"
+  region = "us-east-1" # USA (North Virginia) region
+}
+
+# Israel (Tel Aviv) - Virtual Private Gateway
+resource "aws_vpn_gateway" "israel_vgw" {
+  provider          = aws.israel
+  vpc_id            = "<Israel_VPC_ID>"
+  amazon_side_asn   = "64512"
+  tags = {
+    Name = "Israel-VGW"
+  }
+}
+
+# USA (North Virginia) - Virtual Private Gateway
+resource "aws_vpn_gateway" "usa_vgw" {
+  provider          = aws.usa
+  vpc_id            = "<USA_VPC_ID>"
+  amazon_side_asn   = "64513"
+  tags = {
+    Name = "USA-VGW"
+  }
+}
+
+# Israel (Tel Aviv) - Customer Gateway for USA
+resource "aws_customer_gateway" "usa_cgw" {
+  provider         = aws.israel
+  bgp_asn          = 65000
+  ip_address       = aws_vpn_gateway.usa_vgw.id
+  type             = "ipsec.1"
+  tags = {
+    Name = "USA-CGW"
+  }
+}
+
+# USA (North Virginia) - Customer Gateway for Israel
+resource "aws_customer_gateway" "israel_cgw" {
+  provider         = aws.usa
+  bgp_asn          = 65001
+  ip_address       = aws_vpn_gateway.israel_vgw.id
+  type             = "ipsec.1"
+  tags = {
+    Name = "Israel-CGW"
+  }
+}
+
+# Israel (Tel Aviv) - VPN Connection to USA
+resource "aws_vpn_connection" "israel_to_usa" {
+  provider          = aws.israel
+  vpn_gateway_id    = aws_vpn_gateway.israel_vgw.id
+  customer_gateway_id = aws_customer_gateway.usa_cgw.id
+  type              = "ipsec.1"
+  static_routes_only = false # Change to true if using static routing
+
+  tags = {
+    Name = "Israel-to-USA-VPN"
+  }
+}
+
+# USA (North Virginia) - VPN Connection to Israel
+resource "aws_vpn_connection" "usa_to_israel" {
+  provider          = aws.usa
+  vpn_gateway_id    = aws_vpn_gateway.usa_vgw.id
+  customer_gateway_id = aws_customer_gateway.israel_cgw.id
+  type              = "ipsec.1"
+  static_routes_only = false # Change to true if using static routing
+
+  tags = {
+    Name = "USA-to-Israel-VPN"
+  }
+}
+
+# Israel (Tel Aviv) - Route Table Update
+resource "aws_route" "israel_to_usa_route" {
+  provider                = aws.israel
+  route_table_id          = "<Israel_Route_Table_ID>"
+  destination_cidr_block  = "<USA_VPC_CIDR_BLOCK>"
+  gateway_id              = aws_vpn_gateway.israel_vgw.id
+}
+
+# USA (North Virginia) - Route Table Update
+resource "aws_route" "usa_to_israel_route" {
+  provider                = aws.usa
+  route_table_id          = "<USA_Route_Table_ID>"
+  destination_cidr_block  = "<Israel_VPC_CIDR_BLOCK>"
+  gateway_id              = aws_vpn_gateway.usa_vgw.id
+}
